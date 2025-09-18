@@ -127,6 +127,10 @@ class PhotoboothProtocolClient:
                 print(f"Error decoding preview image: {e}")
         return None
 
+    def poweroff(self):
+        """Tell pi to shut down"""
+        self._send_command("POWEROFF")
+
     def close(self):
         """Closes TCP connection if one exists"""
         self.keepalive_active = False

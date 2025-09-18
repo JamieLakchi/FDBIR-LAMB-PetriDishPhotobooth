@@ -31,8 +31,8 @@ class PhotoboothGUI:
         self.address_entry.grid(row=0, column=0, padx=(0, 10), sticky=(tk.W, tk.E))
         
         # Discover button
-        discover_btn = ttk.Button(top_frame, text="Discover", command=self.discover)
-        discover_btn.grid(row=0, column=1, sticky=tk.W)
+        self.discover_btn = ttk.Button(top_frame, text="Discover", command=self.discover)
+        self.discover_btn.grid(row=0, column=1, sticky=tk.W)
         
         # Preview capture button
         preview_btn = ttk.Button(self.root, text="Capture Preview", command=self.capture_preview)
@@ -83,21 +83,23 @@ class PhotoboothGUI:
         self.clear_error()
         print(f"Discovering device at: {address}")
         
-        # Simulate potential error
         if not address:
             self.show_error("Error: Address cannot be empty!")
             return
             
-        # Add your discovery logic here
         try:
             pi_ip = socket.gethostbyname(address)
             print(f"Found Pi at: {pi_ip}")
             self.address_entry.config(foreground="green")
+
             if not self.PBClient.connect(pi_ip, 8888):
                 raise Exception("Failed to connect to pi")
+            
+            self.discover_btn.configure(text="poweroff", command=lambda : self.PBClient.poweroff())
         except Exception as e:
             print(f"Could not resolve {address}: {e}")
             self.address_entry.config(foreground="red")
+            self.show_error("Error: failed to connect to pi")
         
     def capture_preview(self):
         """Handle preview capture button click"""
@@ -138,14 +140,9 @@ class PhotoboothGUI:
             self.show_error("Error: failed to fetch main")
             return
         
-        main_image.save("name.png", "PNG")
-        
-        """
-        sample_image = Image.new('RGB', (400, 300), color=(150, 100, 50))
-        draw = ImageDraw.Draw(sample_image)
-        draw.text((150, 140), "Main Image", fill=(255, 255, 255))
-        self.update_image(sample_image)
-        """
+        name = "name.png"
+        main_image.save(name, "PNG")
+        self.show_message(f"Added image as {name}")
 
     def update_image(self, image):
         """Update the image display with a new image"""

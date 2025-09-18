@@ -4,6 +4,7 @@ import threading
 from PIL import Image
 import io
 import time
+import subprocess
 
 class PhotoboothProtocolServer:
     def __init__(self, host='0.0.0.0', port=8888):
@@ -12,6 +13,7 @@ class PhotoboothProtocolServer:
         self.server_socket = None
         self.running = False
         self.client_handler = None
+        self.poweroff = False
         
     def start(self):
         """Start the server"""
@@ -76,9 +78,11 @@ class PhotoboothProtocolServer:
                     image_data = self._capture_main_image()
                 elif command == "GET_PREVIEW":
                     image_data = self._capture_preview_image()
-                elif command == "KEEPALIVE":
-                    # Respond to keep-alive with empty message
+                elif command == "KEEPALIVE": #respond with empty message
                     image_data = b''
+                elif command == "POWEROFF":
+                    image_data = b''
+                    self.poweroff = True
                 else:
                     image_data = None
                 
@@ -94,6 +98,9 @@ class PhotoboothProtocolServer:
                     error_msg = b"Invalid command"
                     client_socket.sendall(struct.pack('!I', len(error_msg)))
                     client_socket.sendall(error_msg)
+
+                if self.poweroff:
+                    subprocess.run(["sudo", "shutdown", "now"])
                     
         except socket.timeout:
             print(f"Client timeout: {client_address}")
@@ -105,7 +112,6 @@ class PhotoboothProtocolServer:
     
     def _capture_main_image(self):
         """Capture and return main high-resolution image bytes"""
-        # This is where you'll integrate with picamera2
         try:
             img = Image.new('RGB', (1920, 1080), color='red')
             img_byte_arr = io.BytesIO()
@@ -117,7 +123,6 @@ class PhotoboothProtocolServer:
     
     def _capture_preview_image(self):
         """Capture and return preview low-resolution image bytes"""
-        # This is where you'll integrate with picamera2
         try:
             img = Image.new('RGB', (640, 480), color='blue')
             img_byte_arr = io.BytesIO()
