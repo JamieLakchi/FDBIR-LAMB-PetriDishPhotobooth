@@ -151,7 +151,7 @@ class PhotoboothGUI:
         """Update the image display with a new image"""
         # Resize image to fit the display area if needed
         if image.size != (400, 300):
-            image = image.resize((400, 300), Image.Resampling.LANCZOS)
+            image = image.resize((400, 300))
         
         self.image_tk = ImageTk.PhotoImage(image)
         self.image_label.configure(image=self.image_tk)
