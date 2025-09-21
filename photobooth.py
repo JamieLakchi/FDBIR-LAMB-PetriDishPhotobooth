@@ -77,6 +77,15 @@ class PhotoboothGUI:
         error_frame.columnconfigure(0, weight=1)
         self.root.rowconfigure(2, weight=1)
         
+    def connected(self):
+        self.address_entry.config(foreground="green")
+        self.discover_btn.config(text="shutdown", command=self.shutdown)
+
+    def disconnected(self):
+        self.show_message("pi disconnected")
+        self.address_entry.config(foreground="black")
+        self.discover_btn.config(text="discover", command=self.discover)
+
     def discover(self):
         """Handle discover button click"""
         address = self.address_var.get()
@@ -90,17 +99,21 @@ class PhotoboothGUI:
         try:
             pi_ip = socket.gethostbyname(address)
             print(f"Found Pi at: {pi_ip}")
-            self.address_entry.config(foreground="green")
 
             if not self.PBClient.connect(pi_ip, 8888):
                 raise Exception("Failed to connect to pi")
             
-            self.discover_btn.configure(text="poweroff", command=lambda : self.PBClient.poweroff())
+            self.connected()
+
         except Exception as e:
             print(f"Could not resolve {address}: {e}")
             self.address_entry.config(foreground="red")
             self.show_error("Error: failed to connect to pi")
-        
+    
+    def shutdown(self):
+        self.PBClient.poweroff()
+        self.disconnected()
+
     def capture_preview(self):
         """Handle preview capture button click"""
         self.clear_error()
