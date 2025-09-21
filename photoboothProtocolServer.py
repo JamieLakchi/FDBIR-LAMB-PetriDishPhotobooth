@@ -3,7 +3,6 @@ import struct
 import threading
 from PIL import Image
 import io
-import time
 import subprocess
 
 class PhotoboothProtocolServer:
@@ -14,7 +13,11 @@ class PhotoboothProtocolServer:
         self.running = False
         self.client_handler = None
         self.poweroff = False
+        self.camera = None
         
+    def attachCamera(self, camera):
+        self.camera = camera
+
     def start(self):
         """Start the server"""
         try:
@@ -113,9 +116,11 @@ class PhotoboothProtocolServer:
     def _capture_main_image(self):
         """Capture and return main high-resolution image bytes"""
         try:
-            img = Image.new('RGB', (1920, 1080), color='red')
+            if self.camera == None:
+                return None
+            img = self.camera.getMain()
             img_byte_arr = io.BytesIO()
-            img.save(img_byte_arr, format='JPEG', quality=95)
+            img.save(img_byte_arr, format='PNG')
             return img_byte_arr.getvalue()
         except Exception as e:
             print(f"Error capturing main image: {e}")
@@ -124,7 +129,9 @@ class PhotoboothProtocolServer:
     def _capture_preview_image(self):
         """Capture and return preview low-resolution image bytes"""
         try:
-            img = Image.new('RGB', (640, 480), color='blue')
+            if self.camera == None:
+                return None
+            img = self.camera.getLores() 
             img_byte_arr = io.BytesIO()
             img.save(img_byte_arr, format='JPEG', quality=80)
             return img_byte_arr.getvalue()
