@@ -137,10 +137,10 @@ class PhotoboothControlServer:
         self.logger = logging.getLogger("BoothCTLServer")
 
     def start(self, ip, port):
-        self.server_socket = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
-        self.server_socket.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
-        self.server_socket.bind((self.host, self.port))
-        self.server_socket.listen()
+        self.sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+        self.sock.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
+        self.sock.bind((self.host, self.port))
+        self.sock.listen()
 
         self.running = True
             
@@ -148,7 +148,7 @@ class PhotoboothControlServer:
         
         while self.running:
             try:
-                client_socket, client_address = self.server_socket.accept()
+                client_socket, client_address = self.sock.accept()
                 self.logger.info(f"Client connected: {client_address}")
                 
                 # Handle client in a separate thread
@@ -213,8 +213,8 @@ class PhotoboothControlServer:
     def stop(self):
         """Stop the server"""
         self.running = False
-        if self.server_socket:
-            self.server_socket.close()
-        print("Server stopped")
+        if self.sock is None:
+            self.sock.close()
+        self.logger.info("Server stopped")
 
                 
