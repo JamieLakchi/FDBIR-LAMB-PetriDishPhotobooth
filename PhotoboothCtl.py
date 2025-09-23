@@ -137,10 +137,10 @@ class PhotoboothControlServer:
         self.logger = logging.getLogger("BoothCTLServer")
 
     def start(self, ip, port):
-        self.server_socket = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
-        self.server_socket.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
-        self.server_socket.bind((self.host, self.port))
-        self.server_socket.listen()
+        self.sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+        self.sock.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
+        self.sock.bind((self.host, self.port))
+        self.sock.listen()
 
         self.running = True
             
@@ -148,7 +148,7 @@ class PhotoboothControlServer:
         
         while self.running:
             try:
-                client_socket, client_address = self.server_socket.accept()
+                client_socket, client_address = self.sock.accept()
                 self.logger.info(f"Client connected: {client_address}")
                 
                 # Handle client in a separate thread
@@ -192,29 +192,29 @@ class PhotoboothControlServer:
 
     def _capture_main(self, sock):
         subprocess.run(["rpicam-still",
-                            "-o", "/tmp/img.jpg",
+                            "-o", "/tmp/main_img.jpg",
                             "--width", "8000",
                             "--height", "6000",
                             "-n", "--immediate", "--autofocus-on-capture",
                             "--denoise", "cdn_off"])
         
-        _send_file(sock, "/tmp/img.jpg")
+        _send_file(sock, "/tmp/main_img.jpg")
 
     def _capture_preview(self, sock):
         subprocess.run(["rpicam-still",
-                            "-o", "/tmp/img.jpg",
+                            "-o", "/tmp/prev_img.jpg",
                             "--width", "2312",
                             "--height", "1736",
                             "-n", "--immediate", "--autofocus-on-capture",
                             "--denoise", "cdn_off"])
         
-        _send_file(sock, "/tmp/img.jpg")
+        _send_file(sock, "/tmp/prev_img.jpg")
 
     def stop(self):
         """Stop the server"""
         self.running = False
-        if self.server_socket:
-            self.server_socket.close()
-        print("Server stopped")
+        if self.sock is not None:
+            self.sock.close()
+        self.logger.info("Server stopped")
 
                 
