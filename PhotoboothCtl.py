@@ -199,23 +199,23 @@ class PhotoboothControlServer:
 
     def _capture_main(self, sock):
         subprocess.run(["rpicam-still",
-                            "-o", "/tmp/img.jpg",
+                            "-o", "/tmp/main_img.jpg",
                             "--width", "8000",
                             "--height", "6000",
                             "-n", "--immediate", "--autofocus-on-capture",
                             "--denoise", "cdn_off"])
         
-        _send_file(sock, "/tmp/img.jpg")
+        _send_file(sock, "/tmp/main_img.jpg")
 
     def _capture_preview(self, sock):
         subprocess.run(["rpicam-still",
-                            "-o", "/tmp/img.jpg",
+                            "-o", "/tmp/prev_img.jpg",
                             "--width", "2312",
                             "--height", "1736",
                             "-n", "--immediate", "--autofocus-on-capture",
                             "--denoise", "cdn_off"])
         
-        _send_file(sock, "/tmp/img.jpg")
+        _send_file(sock, "/tmp/prev_img.jpg")
 
     def stop(self):
         """Stop the server"""

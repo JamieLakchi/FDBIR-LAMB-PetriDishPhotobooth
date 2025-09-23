@@ -187,7 +187,6 @@ class PhotoboothGUI:
         
     def capture_main(self):
         """Handle main capture button click"""
-        self.clear_error()
         print("Capturing main image...")
 
         directory = self.dir_var.get()
@@ -220,7 +219,6 @@ class PhotoboothGUI:
         
     def choose_directory(self, event=None):
         """Open directory chooser dialog"""
-        self.clear_error()
         directory = filedialog.askdirectory(
             title="Select directory to save images",
             initialdir=os.getcwd()
@@ -228,4 +226,4 @@ class PhotoboothGUI:
         
         if directory:
             self.dir_var.set(directory)
-            print(f"Selected directory: {directory}")
+            self.log_info(f"Selected directory: {directory}")
