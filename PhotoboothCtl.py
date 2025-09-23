@@ -203,8 +203,8 @@ class PhotoboothControlServer:
     def _capture_preview(self, sock):
         subprocess.run(["rpicam-still",
                             "-o", "/tmp/img.jpg",
-                            "--width", "",
-                            "--height", "",
+                            "--width", "2312",
+                            "--height", "1736",
                             "-n", "--immediate", "--autofocus-on-capture",
                             "--denoise", "cdn_off"])
         
