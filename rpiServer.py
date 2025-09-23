@@ -1,10 +1,14 @@
-from photoboothProtocolServer import PhotoboothProtocolServer
+from PhotoboothCtl import PhotoboothControlServer
 from rpiCameraCtl import CameraCtl
 
+import logging
+
 if __name__ == "__main__":
-    server = PhotoboothProtocolServer()
-    camera = CameraCtl()
-    server.attachCamera(camera)
+    logging.basicConfig(
+        level=logging.INFO,
+        format='%(asctime)s - %(name)s - %(levelname)s - %(message)s'
+    )
+    server = PhotoboothControlServer()
     try:
         server.start()
     finally:
