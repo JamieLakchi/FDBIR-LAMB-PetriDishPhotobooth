@@ -10,6 +10,6 @@ if __name__ == "__main__":
     )
     server = PhotoboothControlServer()
     try:
-        server.start()
+        server.start("0.0.0.0", 8888)
     finally:
         server.stop()

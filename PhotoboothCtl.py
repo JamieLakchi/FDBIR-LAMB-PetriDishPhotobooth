@@ -65,7 +65,7 @@ class PhotoboothControl:
 
             self.gui.log_info(f"[{(len(data)*100)//n}%] downloading...")
 
-        return chunk
+        return data 
 
     def discover(self):
         """Attempts to establish socket connection"""
@@ -108,7 +108,7 @@ class PhotoboothControl:
         self.gui.log_info("attempting to capture main")
 
         if not _send_req(self.sock, "CAPTURE_MAIN"):
-            self.log_error("failed to request main (connection might be lost)")
+            self.gui.log_error("failed to request main (connection might be lost)")
             return
         
         main_len = struct.calcsize("!I")
@@ -121,10 +121,10 @@ class PhotoboothControl:
 
 def _send_file(sock: socket.socket, fname: str):
     """Sends given file through socket"""
-    buffer = io.BytesIO()
 
+    buffer = b''
     with open(fname, 'rb') as file:
-        file.readinto(fname)
+        file.readinto(buffer)
     
     header = struct.pack(HEADER_FRMT, len(buffer))
 
@@ -139,12 +139,12 @@ class PhotoboothControlServer:
     def start(self, ip, port):
         self.sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
         self.sock.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
-        self.sock.bind((self.host, self.port))
+        self.sock.bind((ip, port))
         self.sock.listen()
 
         self.running = True
             
-        self.logger.info(f"Server started on {self.host}:{self.port}")
+        self.logger.info(f"Server started on {ip}:{port}")
         
         while self.running:
             try:
@@ -170,12 +170,19 @@ class PhotoboothControlServer:
             while True:
                 req_header = _recvb(client_socket, HEADER_SIZE)
 
-                if not req_header:
+                if req_header is None:
                     self.logger.error(f"Failed to read request header")
+                    return
 
                 req_size = struct.unpack(HEADER_FRMT, req_header)[0]
 
-                req = _recvb(client_socket, req_size).decode("utf-8")
+                req_buffer = _recvb(client_socket, req_size)
+
+                if req_buffer is None:
+                    self.logger.error(f"Failed to read request body of {req_size} bytes")
+                    return
+
+                req = req_buffer.decode("utf-8")
 
                 if req == "CAPTURE_MAIN":
                     self._capture_main(client_socket)
@@ -213,7 +220,7 @@ class PhotoboothControlServer:
     def stop(self):
         """Stop the server"""
         self.running = False
-        if self.sock is None:
+        if self.sock is not None:
             self.sock.close()
         self.logger.info("Server stopped")
 

@@ -1,6 +1,8 @@
 import picamera2
+from libcamera import controls
 from rpi_ws281x import PixelStrip
 from PIL import Image
+import cv2
 
 import time
 
@@ -22,14 +24,15 @@ class CameraCtl:
         self._configure_lights()
 
     def _configure_cam(self):
-        mode = self.camera.sensor_modes[-2]
         self.camera.still_configuration.enable_lores()
+
+        mode = self.camera.sensor_modes[-2]
         config = self.camera.create_still_configuration(
             main={
                 'size': (8000, 6000)
             },
             lores={
-                'size': (1280, 720)
+                'size': (1280, 720),
             },
             sensor={
                 'output_size': mode['size'],
@@ -38,9 +41,11 @@ class CameraCtl:
         )
 
         self.camera.configure(config)
-        time.sleep(2)
-
         self.camera.start()
+
+        self.camera.set_controls({'AfMode': controls.AfModeEnum.Continuous})
+
+        time.sleep(2)
 
     def _configure_lights(self):
         self.lights.begin()
@@ -62,4 +67,6 @@ class CameraCtl:
 
     def getLores(self) -> Image.Image:
         """Captures lores channel to PIL object"""
-        return self.camera.capture_image(name="lores")
+        lores_yuv = self.camera.capture_array("lores")
+        lores_rgb = cv2.cvtColor(lores_yuv, cv2.COLOR_YUV2RGB_I420)
+        return Image.fromarray(lores_rgb)
