@@ -122,9 +122,9 @@ class PhotoboothControl:
 def _send_file(sock: socket.socket, fname: str):
     """Sends given file through socket"""
 
-    buffer = b''
+    buffer = b'' 
     with open(fname, 'rb') as file:
-        file.readinto(buffer)
+        buffer = file.read()
     
     header = struct.pack(HEADER_FRMT, len(buffer))
 
@@ -198,23 +198,33 @@ class PhotoboothControlServer:
             self.logger.info(f"Client disconnected: {client_address}")
 
     def _capture_main(self, sock):
-        subprocess.run(["rpicam-still",
+        exit_code = subprocess.run(["rpicam-still",
                             "-o", "/tmp/main_img.jpg",
                             "--width", "8000",
                             "--height", "6000",
                             "-n", "--immediate", "--autofocus-on-capture",
-                            "--denoise", "cdn_off"])
+                            "--denoise", "cdn_off"]).returncode
+
+        if exit_code:
+            self.logger.error("failed to capture main")
+            _send(sock, struct.pack(HEADER_FRMT, 0))
+            return
         
         _send_file(sock, "/tmp/main_img.jpg")
 
     def _capture_preview(self, sock):
-        subprocess.run(["rpicam-still",
+        exit_code = subprocess.run(["rpicam-still",
                             "-o", "/tmp/prev_img.jpg",
                             "--width", "2312",
                             "--height", "1736",
-                            "-n", "--immediate", "--autofocus-on-capture",
-                            "--denoise", "cdn_off"])
+                            "-n", "--autofocus-on-capture",
+                            "--denoise", "cdn_off"]).returncode
         
+        if exit_code:
+            self.logger.error("failed to capture preview")
+            _send(sock, struct.pack(HEADER_FRMT, 0))
+            return
+
         _send_file(sock, "/tmp/prev_img.jpg")
 
     def stop(self):
