@@ -7,7 +7,7 @@ import logging
 
 from PhotoboothCtl import PhotoboothControl
 from PIL import Image, ImageTk, ImageDraw
-from tkinter import ttk, filedialog
+from tkinter import ttk, filedialog, simpledialog
 from dataclasses import dataclass
 from typing import Optional
 from enum import Enum
@@ -166,24 +166,17 @@ class PhotoboothGUI:
             return None
         return directory
 
-    def capture_preview(self):
-        """Handle preview capture button click"""
-        self.clear_error()
-        print("Capturing preview...")
-        
-        if not self.PBClient.isConnected():
-            self.show_error("Error: not connected to pi")
-            return
-            
-        preview_image = self.PBClient.getPreview()
+    def request_fname(self) -> Optional[str]:
+        return simpledialog.askstring(title="Name Image", prompt="Save image as:", initialvalue="image.jpg")
 
-        if not preview_image:
-            self.show_error("Error: failed to fetch preview")
-            preview_image = Image.new('RGB', (400, 300), color=(50, 100, 150))
-            draw = ImageDraw.Draw(preview_image)
-            draw.text((150, 140), "Preview Image", fill=(255, 255, 255))
-        
-        self.update_image(preview_image)
+    def show_image(self, image: Image):
+        """Update the image display with a new image"""
+        image.save("preview.jpg")
+        if image.size != (400, 300):
+            image = image.resize((400, 300))
+
+        self.image_tk = ImageTk.PhotoImage(image)
+        self.image_label.configure(image=self.image_tk)
         
     def capture_main(self):
         """Handle main capture button click"""
@@ -207,15 +200,6 @@ class PhotoboothGUI:
         name = "name.png"
         main_image.save(name, "PNG")
         self.show_message(f"Added image as {name}")
-
-    def update_image(self, image):
-        """Update the image display with a new image"""
-        # Resize image to fit the display area if needed
-        if image.size != (400, 300):
-            image = image.resize((400, 300))
-        
-        self.image_tk = ImageTk.PhotoImage(image)
-        self.image_label.configure(image=self.image_tk)
         
     def choose_directory(self, event=None):
         """Open directory chooser dialog"""

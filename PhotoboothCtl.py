@@ -7,6 +7,7 @@ import io
 import os
 
 from typing import Optional
+from PIL import Image
 
 HEADER_FRMT = "!Q"
 HEADER_SIZE = struct.calcsize(HEADER_FRMT)
@@ -53,9 +54,8 @@ class PhotoboothControl:
         
         data = b''
         chunk_size = min(max_chunk_size, n)
-        self.gui.log_info("receiving at 8192 bytes per chunk")
 
-        while len(data):
+        while len(data) < n:
             chunk = self.sock.recv(chunk_size)
 
             if not chunk:
@@ -63,7 +63,7 @@ class PhotoboothControl:
             
             data += chunk
 
-            self.gui.log_info(f"[{(len(data)*100)//n}%] downloading...")
+            self.gui.log_info(f"[{(len(data)*100)//n}%] of {n} - downloading...")
 
         return data 
 
@@ -95,26 +95,78 @@ class PhotoboothControl:
             self.gui.log_error(f"failed to connect to {ip}:8888")
             self._close()
 
+    def _capture(self, capture_type: str) -> Optional[Image.Image]:
+        """General capture function, capture_type should be 'main' or 'preview'"""
+        if capture_type not in ["main", "preview"]:
+            return None
+
+        if self.sock is None:
+            self.gui.log_error("no connection to pi")
+            return None
+
+        self.gui.log_info(f"attempting to capture {capture_type}")
+
+        if not _send_req(self.sock, f"CAPTURE_{capture_type.upper()}"):
+            self.gui.log_error(f"failed to request {capture_type} (connection might be lost)")
+            return None
+        
+        prev_size_bytes = _recvb(self.sock, HEADER_SIZE)
+
+        if prev_size_bytes is None:
+            self.gui.log_error(f"failed to receive {capture_type} image size (connection might be lost)")
+            return None
+        
+        prev_size = struct.unpack(HEADER_FRMT, prev_size_bytes)[0]
+
+        if prev_size == 0:
+            self.gui.log_error(f"camera has failed to capture the {capture_type} image")
+            return None
+
+        image_bytes = self._recvb_and_log(prev_size)
+
+        if image_bytes is None:
+            self.gui.log_error(f"failed to receive {capture_type} image (connection might be lost)")
+            return None
+        
+        try:
+            image = Image.open(io.BytesIO(image_bytes))
+        except Exception as e:
+            print(e)
+            self.gui.log_error(f"failed to load {capture_type} image")
+            return None
+        
+        self.gui.log_info("received image data")
+
+        return image
+
     def capture_main(self):
         dirname = self.gui.get_dirname()
+
         if dirname is None:
             self.gui.log_error("no directory selected")
             return
         
-        if self.sock is None:
-            self.gui.log_error("no connection to pi")
-            return
+        image = self._capture("main")
 
-        self.gui.log_info("attempting to capture main")
-
-        if not _send_req(self.sock, "CAPTURE_MAIN"):
-            self.gui.log_error("failed to request main (connection might be lost)")
+        if image is None:
             return
         
-        main_len = struct.calcsize("!I")
+        name = self.gui.request_fname()
+
+        if name is None:
+            self.gui.log_error("no name given, image data discarded")
+        
+        image.save("main.jpg")
 
     def capture_preview(self):
-        pass
+        image = self._capture("preview")
+
+        if image is None:
+            return
+        
+        self.gui.show_image(image)
+        self.gui.log_info("showing captured preview image")
+
 
     def power_off(self):
         pass
