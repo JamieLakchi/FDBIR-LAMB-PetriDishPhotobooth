@@ -254,7 +254,7 @@ class PhotoboothControlServer:
                             "-o", "/tmp/main_img.jpg",
                             "--width", "8000",
                             "--height", "6000",
-                            "-n", "--immediate", "--autofocus-on-capture",
+                            "-n", "--autofocus-on-capture",
                             "--denoise", "cdn_off"]).returncode
 
         if exit_code:
@@ -270,7 +270,8 @@ class PhotoboothControlServer:
                             "--width", "2312",
                             "--height", "1736",
                             "-n", "--autofocus-on-capture",
-                            "--denoise", "cdn_off"]).returncode
+                            "--denoise", "cdn_off",
+                            "--awb", "tungsten"]).returncode
         
         if exit_code:
             self.logger.error("failed to capture preview")
