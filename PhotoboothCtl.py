@@ -8,6 +8,7 @@ import os
 
 from typing import Optional
 from PIL import Image
+from os import path
 
 HEADER_FRMT = "!Q"
 HEADER_SIZE = struct.calcsize(HEADER_FRMT)
@@ -147,16 +148,22 @@ class PhotoboothControl:
             return
         
         image = self._capture("main")
-
+        
         if image is None:
             return
         
-        name = self.gui.request_fname()
-
+        name = self.gui.get_fname()
+        
         if name is None:
             self.gui.log_error("no name given, image data discarded")
         
-        image.save("main.jpg")
+        full_path = path.join(dirname, name)
+        
+        self.gui.log_info(f"saving image to {full_path}")
+
+        image.save(full_path)
+
+        self.gui.log_info(f"image saved to {full_path}")
 
     def capture_preview(self):
         image = self._capture("preview")

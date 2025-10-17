@@ -79,9 +79,10 @@ class PhotoboothGUI:
         dir_label.grid(row=0, column=0, sticky=(tk.W, tk.E), padx=(0, 10))
         dir_label.bind("<Button-1>", self.choose_directory)  # Click to choose directory
         
-        # Browse button
-        browse_btn = ttk.Button(dir_frame, text="Browse", command=self.choose_directory)
-        browse_btn.grid(row=0, column=1, sticky=tk.W)
+        # Filename input
+        self.fname_var = tk.StringVar(value="image.jpg")
+        self.fname_entry = ttk.Entry(dir_frame, textvariable=self.fname_var)
+        self.fname_entry.grid(row=0, column=1, sticky=(tk.E))
         
         # Error display area at the bottom
         logging_frame = ttk.Frame(self.root, padding="10")
@@ -128,6 +129,7 @@ class PhotoboothGUI:
                 continue
 
             except Exception as e:
+                print(e)
                 continue
 
     def _get_next_request_id(self):
@@ -166,8 +168,12 @@ class PhotoboothGUI:
             return None
         return directory
 
-    def request_fname(self) -> Optional[str]:
-        return simpledialog.askstring(title="Name Image", prompt="Save image as:", initialvalue="image.jpg")
+    def get_fname(self) -> Optional[str]:
+        """Returns the given filename"""
+        fname = self.fname_var.get()
+        if fname == "":
+            return None
+        return fname
 
     def show_image(self, image: Image):
         """Update the image display with a new image"""
