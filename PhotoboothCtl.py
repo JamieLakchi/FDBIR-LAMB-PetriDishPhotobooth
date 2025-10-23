@@ -75,15 +75,16 @@ class PhotoboothControl:
 
         if hostname is None:
             self.gui.log_error("no hostname given")
-            return
+            self.gui.updateConnection(False)
         
-        self.gui.log_info(f"looking for {hostname}.local")
+        self.gui.log_info(f"looking for {hostname}")
 
         try:
             ip = socket.gethostbyname(hostname)
             self.gui.log_info(f"found {hostname} at {ip}")
         except:
             self.gui.log_error(f"failed to find {hostname}")
+            self.gui.updateConnection(False)
             return
         
         self.gui.log_info(f"attempting connection to {ip}:8888")
@@ -92,9 +93,11 @@ class PhotoboothControl:
             self.sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
             self.sock.connect((ip, 8888))
             self.gui.log_info(f"connected to {ip}:8888")
+            self.gui.updateConnection(True)
         except:
             self.gui.log_error(f"failed to connect to {ip}:8888")
             self._close()
+            self.gui.updateConnection(False)
 
     def _capture(self, capture_type: str) -> Optional[Image.Image]:
         """General capture function, capture_type should be 'main' or 'preview'"""
@@ -103,6 +106,7 @@ class PhotoboothControl:
 
         if self.sock is None:
             self.gui.log_error("no connection to pi")
+            self.gui.updateConnection(False)
             return None
 
         self.gui.log_info(f"attempting to capture {capture_type}")
@@ -174,9 +178,10 @@ class PhotoboothControl:
         self.gui.show_image(image)
         self.gui.log_info("showing captured preview image")
 
-
     def power_off(self):
-        pass
+        _send_req(self.sock, "POWER_OFF")
+        self.gui.log_info("sent SIGKILL to rpi (wait a moment before unplugging)")
+        self.gui.updateConnection(False)
 
 def _send_file(sock: socket.socket, fname: str):
     """Sends given file through socket"""

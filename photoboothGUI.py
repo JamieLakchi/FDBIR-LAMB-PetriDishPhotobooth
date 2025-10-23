@@ -111,7 +111,7 @@ class PhotoboothGUI:
             try:
                 # Get request from queue (with timeout to allow shutdown)
                 request = self.request_queue.get(timeout=0.1)
-                
+        
                 # Process the request
                 if request.type == RequestType.DISCOVER:
                     self.BoothCtl.discover()
@@ -119,7 +119,7 @@ class PhotoboothGUI:
                     self.BoothCtl.capture_main()
                 elif request.type == RequestType.CAPTUREPREVIEW:
                     self.BoothCtl.capture_preview()
-                elif request == RequestType.POWEROFF:
+                elif request.type == RequestType.POWEROFF:
                     self.BoothCtl.power_off()
                 
                 # Mark task as done
@@ -174,6 +174,12 @@ class PhotoboothGUI:
         if fname == "":
             return None
         return fname
+
+    def updateConnection(self, isconnected: bool):
+        if isconnected:
+            self.discover_btn.configure(text="Shutdown", command=lambda: self._send_request(RequestType.POWEROFF))
+        else:
+            self.discover_btn.configure(text="Discover", command=lambda: self._send_request(RequestType.DISCOVER))
 
     def show_image(self, image: Image):
         """Update the image display with a new image"""
