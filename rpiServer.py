@@ -22,9 +22,6 @@ if __name__ == "__main__":
     lights.begin()
 
     for i in range(LED_COUNT):
-        lights.setPixelColorRGB(i, 0,0,0)
-
-    for i in [0, 1, 3, 5, 7]:
         lights.setPixelColorRGB(i, 255, 255, 255)
 
     lights.show()
