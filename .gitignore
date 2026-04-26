@@ -1,0 +1,10 @@
+env/
+
+logs/*
+
+logs.txt
+test.py
+
+**/__pycache__
+**.UML
+**.jpg
