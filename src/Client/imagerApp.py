@@ -138,10 +138,10 @@ class ImagerApp:
         try:
             self.imagerClient.power_off()
             self.__backend_log(INFO, f"powering off RPI (wait a moment before unplugging)")
-
-            self.frontend_responses.put(lambda: self.__switch_discover_btn("Discover"))
         except:
             self.__backend_log(ERROR, "no connection found")
+        finally:
+            self.frontend_responses.put(lambda: self.__switch_discover_btn("Discover"))
 
     def __setup_ui(self) -> None:
         """

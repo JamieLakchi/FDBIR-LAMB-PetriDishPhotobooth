@@ -89,6 +89,7 @@ class ImagerServer:
         client_socket: socket connection to client
         client_address: tuple containing ip and port of client
         """
+        client_socket.settimeout(120)
         connection = Connection(client_socket)
         try:
             while self.isRunning():

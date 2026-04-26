@@ -55,7 +55,7 @@ class ImagerClientConnection:
         try:
             sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
             sock.connect((ip, PROTOCOL_PORT))
-            sock.settimeout(5)
+            sock.settimeout(120)
             self.connection = Connection(sock)
         except:
             self.__log(ERROR, f"could not connect to {ip}@{PROTOCOL_PORT}")
