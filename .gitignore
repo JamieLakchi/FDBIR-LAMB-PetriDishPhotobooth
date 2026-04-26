@@ -4,7 +4,7 @@ logs/*
 
 logs.txt
 test.py
+__current_preview.jpg
 
 **/__pycache__
 **.UML
-**.jpg

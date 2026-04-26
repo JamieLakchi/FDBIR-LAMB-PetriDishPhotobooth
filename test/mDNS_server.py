@@ -95,6 +95,8 @@ from pathlib import Path
 
 from src.connections import Connection, RequestType
 
+PREVIEW_FILE_PATH = Path("test/preview.jpg")
+
 class ImagerServerStub(MDNSTestServer):
     def __init__(self):
         super().__init__()
@@ -118,10 +120,10 @@ class ImagerServerStub(MDNSTestServer):
                     connection.send_fmsg(b"")
 
                 elif request_type == RequestType.CAPTURE_PREVIEW:
-                    connection.send_file(Path("preview.jpg"))
+                    connection.send_file(PREVIEW_FILE_PATH)
 
                 elif request_type == RequestType.CAPTURE_MAIN:
-                    connection.send_file(Path("preview.jpg"))
+                    connection.send_file(PREVIEW_FILE_PATH)
 
                 elif request_type == RequestType.POWER_OFF:
                     break
