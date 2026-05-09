@@ -6,6 +6,7 @@ from typing import Optional, Callable, Literal, Union
 from pathlib import Path
 from PIL import Image, ImageTk
 from tkinter import ttk, filedialog
+from concurrent.futures import ThreadPoolExecutor
 
 from src.logs import Logger, INFO, WARN, ERROR
 from src.exceptions import NoConnectionAvailable
@@ -28,9 +29,11 @@ class ImagerApp:
         self.root.title("Camera Controller")
         self.root.geometry("600x750")
 
-        self.frontend_responses : queue.Queue[Callable[[], None]] = queue.Queue()
-        self.backend_requests : queue.Queue[Callable[[], None]] = queue.Queue()
+        self.frontend_tasks : queue.Queue[Callable[[], None]] = queue.Queue()
+
+        self.backend_tasks : queue.Queue[Callable[[], None]] = queue.Queue()
         self.backend_worker = threading.Thread(target=self.__backend_worker, daemon=True)
+        self.backend_executor = ThreadPoolExecutor(max_workers=3)
 
         self.imagerClient = ImagerClient(self.logger)
 
@@ -52,14 +55,14 @@ class ImagerApp:
         """
         Thread safe version of log
         """
-        self.frontend_responses.put(lambda: self.__log(type, msg))
+        self.frontend_tasks.put(lambda: self.__log(type, msg))
 
     def __frontend_worker(self) -> None:
         """
         Method to start a thread that does frontend updates (in main thread)
         """
         try:
-            command = self.frontend_responses.get(timeout=0.01)
+            command = self.frontend_tasks.get(timeout=0.01)
             command()
         except queue.Empty:
             pass
@@ -71,17 +74,25 @@ class ImagerApp:
     def __backend_worker(self) -> None:
         """
         Method to start a thread that does backend work (prevents main thread from hanging)
+
+        Uses threadpool to execute commands, can process max_workers commands at once
         """
         while True:
             try:
-                command = self.backend_requests.get(timeout=0.1)
-                command()
+                command = self.backend_tasks.get(timeout=0.1)
+                self.__dispatch_backend_executor(command)
             except queue.Empty:
                 pass
             except Exception as e:
                 self.__backend_log(ERROR, str(e))
 
-    def __discover(self) -> None:
+    def __dispatch_backend_executor(self, command: Callable[[], None]) -> None:
+        try:
+            command()
+        except Exception as e:
+            self.__backend_log(ERROR, str(e))
+
+    def _discover(self) -> None:
         """
         Backend method to discover IP using mDNS and connect to RPI
         """
@@ -96,54 +107,77 @@ class ImagerApp:
             
         self.__backend_log(INFO, f"connected to {self.imagerClient.connection_repr()}")
 
-        self.frontend_responses.put(lambda: self.__switch_discover_btn("Shutdown"))
+        self.frontend_tasks.put(lambda: self._switch_discover_btn("Shutdown"))
 
-    def __capture_preview(self) -> None:
-        self.__backend_log(INFO, f"capturing preview")
+    def _capture_preview(self) -> None:
+        """backend method for captring a preview (lower resolution) image"""
+        try:
+            self.__backend_log(INFO, f"capturing preview")
 
-        preview_image = self.imagerClient.capture_preview()
+            preview_image = self.imagerClient.capture_preview()
 
-        def complete():
-            """
-            Place image in display area
-            """
-            if preview_image is None:
-                self.__log(ERROR, "failed to fetch preview")
+            self.frontend_tasks.put(lambda: self._complete_capture(preview_image))
+        except Exception as e:
+            self.frontend_tasks.put(lambda: self._set_capture_buttons(disabled=False))
+            raise e
+
+    def _capture_main(self) -> None:
+        """backend method for captring a preview (higher resolution) image"""
+        try:
+            directory = self.dir_var.get()
+
+            if directory == "Select directory...":
+                self.__backend_log(ERROR, "please select a directory")
+                self.frontend_tasks.put(lambda: self._set_capture_buttons(disabled=False))
                 return
             
-            self.__display_image(preview_image)
-            self.__log(INFO, "showing preview image")
+            fname = self.fname_var.get()
 
-        self.frontend_responses.put(complete)
+            if fname == "":
+                self.__backend_log(ERROR, "please choose a file name")
+                self.frontend_tasks.put(lambda: self._set_capture_buttons(disabled=False))
+                return
+            
+            fpath = Path(directory) / Path(fname)
 
-    def __capture_main(self) -> None:
-        directory = self.dir_var.get()
+            self.__backend_log(INFO, f"capturing main")
 
-        if directory == "Select directory...":
-            self.__backend_log(ERROR, "please select a directory")
-            return
-        
-        fname = self.fname_var.get()
+            main_image = self.imagerClient.capture_main(fpath)
 
-        if fname == "":
-            self.__backend_log(ERROR, "please choose a file name")
-            return
-        
-        fpath = Path(directory) / Path(fname)
+            self.frontend_tasks.put(lambda: self._complete_capture(main_image))
 
-        self.__backend_log(INFO, f"capturing main")
+            self.__backend_log(INFO, f"captured main (stored at {fpath})")
+        except Exception as e:
+            self.frontend_tasks.put(lambda: self._set_capture_buttons(disabled=False))
+            raise e
 
-        self.imagerClient.capture_main(fpath)
-        self.__backend_log(INFO, f"captured main (stored at {fpath})")
+    def _start_capture(self, preview: bool) -> None:
+        """
+        Frontend wrapper for starting a capture
+        """
+        self._set_capture_buttons(disabled=True)
 
-    def __power_off(self) -> None:
+        if preview:
+            self.backend_tasks.put(self._capture_preview)
+        else:
+            self.backend_tasks.put(self._capture_main)
+
+    def _complete_capture(self, image: Image.Image) -> None:
+        """
+        Frontend wrapper for ending a capture
+        """        
+        self._display_image(image)
+        self.__log(INFO, "showing new image")
+        self._set_capture_buttons(disabled=False)
+
+    def _power_off(self) -> None:
         try:
             self.imagerClient.power_off()
             self.__backend_log(INFO, f"powering off RPI (wait a moment before unplugging)")
         except:
             self.__backend_log(ERROR, "no connection found")
         finally:
-            self.frontend_responses.put(lambda: self.__switch_discover_btn("Discover"))
+            self.frontend_tasks.put(lambda: self._switch_discover_btn("Discover"))
 
     def __setup_ui(self) -> None:
         """
@@ -159,12 +193,12 @@ class ImagerApp:
         self.address_entry.grid(row=0, column=0, padx=(0, 10), sticky=tk.W + tk.E)
         
         # Discover button
-        self.discover_btn = ttk.Button(top_frame, text="Discover", command=lambda: self.backend_requests.put(self.__discover))
+        self.discover_btn = ttk.Button(top_frame, text="Discover", command=lambda: self.backend_tasks.put(self._discover))
         self.discover_btn.grid(row=0, column=1, sticky=tk.W)
         
         # Preview capture button
-        preview_btn = ttk.Button(self.root, text="Capture Preview", command=lambda: self.backend_requests.put(self.__capture_preview))
-        preview_btn.grid(row=1, column=0, padx=10, pady=10, sticky=tk.W + tk.E)
+        self.preview_btn = ttk.Button(self.root, text="Capture Preview", command=lambda: self._start_capture(preview=True))
+        self.preview_btn.grid(row=1, column=0, padx=10, pady=10, sticky=tk.W + tk.E)
         
         # Image display area
         self.image_tk = ImageTk.PhotoImage(DEFAULT_IMAGE)
@@ -172,8 +206,8 @@ class ImagerApp:
         self.image_label.grid(row=2, column=0, padx=10, pady=10)
         
         # Main capture button
-        main_btn = ttk.Button(self.root, text="Capture Main", command=lambda: self.backend_requests.put(self.__capture_main))
-        main_btn.grid(row=3, column=0, padx=10, pady=10, sticky=tk.W + tk.E)
+        self.main_btn = ttk.Button(self.root, text="Capture Main", command=lambda: self._start_capture(preview=False))
+        self.main_btn.grid(row=3, column=0, padx=10, pady=10, sticky=tk.W + tk.E)
         
         # Directory selection frame
         dir_frame = ttk.Frame(self.root, padding="10")
@@ -184,7 +218,7 @@ class ImagerApp:
         dir_label = ttk.Label(dir_frame, textvariable=self.dir_var, background="white", 
                              relief="sunken", padding="5")
         dir_label.grid(row=0, column=0, sticky=tk.W + tk.E, padx=(0, 10))
-        dir_label.bind("<Button-1>", func=self.__choose_directory)  # Click to choose directory
+        dir_label.bind("<Button-1>", func=self._choose_directory)  # Click to choose directory
         
         # Filename input
         self.fname_var = tk.StringVar(value="image.jpg")
@@ -207,7 +241,7 @@ class ImagerApp:
         logging_frame.columnconfigure(0, weight=1)
         self.root.rowconfigure(2, weight=1)
 
-    def __choose_directory(self, event: tk.Event) -> None:
+    def _choose_directory(self, event: tk.Event) -> None:
         """Open directory chooser dialog"""
         directory = filedialog.askdirectory(
             title="Select directory to save images",
@@ -218,7 +252,7 @@ class ImagerApp:
             self.dir_var.set(directory)
             self.__log(INFO, f"Selected directory: {directory}")
 
-    def __display_image(self, image: Image.Image):
+    def _display_image(self, image: Image.Image):
         """Update the image display with a new image"""
         image.save(Path("__current_preview.jpg"))
         
@@ -228,11 +262,16 @@ class ImagerApp:
         self.image_tk = ImageTk.PhotoImage(image)
         self.image_label.configure(image=self.image_tk)
 
-    def __switch_discover_btn(self, newFunction : Union[Literal["Discover"],Literal["Shutdown"]]) -> None:
+    def _switch_discover_btn(self, newFunction : Union[Literal["Discover"],Literal["Shutdown"]]) -> None:
         if newFunction == "Discover":
-            self.discover_btn.configure(text="Discover", command=lambda: self.backend_requests.put(self.__discover))
+            self.discover_btn.configure(text="Discover", command=lambda: self.backend_tasks.put(self._discover))
         else:
-            self.discover_btn.configure(text="Shutdown", command=lambda: self.backend_requests.put(self.__power_off))
+            self.discover_btn.configure(text="Shutdown", command=lambda: self.backend_tasks.put(self._power_off))
+
+    def _set_capture_buttons(self, disabled: bool) -> None:
+        state = "disabled" if disabled else "enabled"
+        self.main_btn.configure(state=state)
+        self.preview_btn.configure(state=state)
 
     def start(self) -> None:
         """

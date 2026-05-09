@@ -52,8 +52,6 @@ class ImagerClient:
 
         image = self.imagerConnection.capture(preview=True)
 
-        image.save(Path("__current_preview.jpg"))
-
         return image
     
     def capture_main(self, filepath: Path) -> Image.Image:
