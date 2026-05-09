@@ -131,6 +131,8 @@ class ImagerApp:
         
         fpath = Path(directory) / Path(fname)
 
+        self.__backend_log(INFO, f"capturing main")
+
         self.imagerClient.capture_main(fpath)
         self.__backend_log(INFO, f"captured main (stored at {fpath})")
 
