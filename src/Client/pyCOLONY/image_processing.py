@@ -173,40 +173,7 @@ def label_colonies(preprocessed: np.ndarray) -> tuple[list, np.ndarray]:  # we w
         region.label = i
         region.circularity = 4 * np.pi * region.area / (region.perimeter ** 2 + 1e-5)
 
-    return region_properties, colony_labels
-
-def plot_labels(original: np.ndarray, region_properties: list, colony_labels: np.ndarray) -> tuple[mfig.Figure, dict[int, Any]]:
-    image_label_overlay = label2rgb(colony_labels, image=original, bg_label=0)
-
-    region_plot_components = {}
-
-    fig, ax = plt.subplots()
-    ax.imshow(image_label_overlay)
-
-    for region in region_properties:
-        minr, minc, maxr, maxc = region.bbox
-        rect = mpatches.Rectangle(
-            (minc, minr),
-            maxc - minc,
-            maxr - minr,
-            fill=False,
-            edgecolor="pink",  # change to pink :)
-            linewidth=2,
-        )
-        ax.add_patch(rect)
-        ann = ax.annotate(str(region.label), (0.8,0.8), xycoords=rect, annotation_clip=True, 
-                    color="black", backgroundcolor="yellow",
-                    fontsize=6)
-        
-        region_plot_components[region.label] = {
-            "rect": rect,
-            "annotation": ann 
-        }
-        
-    ax.set_axis_off()
-
-    return fig, region_plot_components
-    # we return here the figure (which we'll want to save to file and the properties of our labels, which we'll also want to save to a dataframe -> xlsx)
+    return region_properties, colony_labels # type: ignore
 
 def get_selected_properties(region_props) -> pd.DataFrame:
     """Extracts selected properties from region properties"""

@@ -311,6 +311,7 @@ class PyCOLONYView:
         if path in self.analysis_cache.keys():
             analysis_data = self.analysis_cache[path]
             analysis_data.analysis_figure.set_all_enabled_regions_visible(True)
+            analysis_data.analysis_figure.set_background(False)
             analysis_data.analysis_figure.redraw()
 
             # Swap button
@@ -338,25 +339,25 @@ class PyCOLONYView:
             scroll_frame.pack(pady=5, fill=tk.BOTH, expand=True)
 
             # Mark as finished button
-            swap_button = tk.Button(self.working_frame, text="Unmark" if analysis_data.marked_finished else "Mark Finished")
+            finished_button = tk.Button(self.working_frame, text="Unmark" if analysis_data.marked_finished else "Mark Finished")
 
             def mark_finished():
                 label = self.thumbnails[path].winfo_children()[-1] # get name label from thumbnail
                 f = tkFont.Font(label, label.cget("font"))
 
-                if swap_button.cget("text") == "Mark Finished":
-                    swap_button.config(text="Unmark")
+                if finished_button.cget("text") == "Mark Finished":
+                    finished_button.config(text="Unmark")
                     analysis_data.mark_finished(True)
                     f.configure(underline = True)
                 else:
-                    swap_button.config(text="Mark Finished")
+                    finished_button.config(text="Mark Finished")
                     analysis_data.mark_finished(False)
                     f.configure(underline = False)
                 
                 label.config(font=f) # type: ignore
 
-            swap_button.config(command=mark_finished)
-            swap_button.pack(pady=5)
+            finished_button.config(command=mark_finished)
+            finished_button.pack(pady=5)
 
         else:
             # Analysis buttons
@@ -465,10 +466,17 @@ class PyCOLONYView:
             data.analysis_figure.set_all_regions_visible(True)
             data.analysis_figure.figure.savefig(save_path / f"allLabels.png", **save_opts)
             data.analysis_figure.set_background(original=True)
-            data.analysis_figure.figure.savefig(save_path / f"allLabelsOriginal.png", **save_opts)     
+            data.analysis_figure.figure.savefig(save_path / f"allLabelsOriginal.png", **save_opts)
 
         write_properties_to_file(properties_list, path/"results.tsv")
         self.app.log(INFO, f"pyCOLONY results have been saved to {path}")
+
+        # reset UI state
+        def reset_ui():
+            if not self.current_selected is None:
+                self.__select_image_from_gallery(self.current_selected, True)
+
+        self.app.task_frontend(reset_ui)
 
     def __setup_ui(self):
         self.log(INFO, "Setting pyCOLONY pane UI")
