@@ -84,7 +84,7 @@ class ImagerApp:
         except Exception as e:
             self.log(ERROR, str(e))
 
-        self.root.after(30, self.__frontend_worker)
+        self.root.after(50, self.__frontend_worker)
 
     def __dispatch_backend_executor(self, command: Callable[[], None]) -> None:
         try:
@@ -101,7 +101,9 @@ class ImagerApp:
         while True:
             try:
                 command = self.backend_tasks.get(timeout=0.1)
-                self.__dispatch_backend_executor(command)
+                self.backend_executor.submit(
+                    lambda: self.__dispatch_backend_executor(command)
+                )
             except queue.Empty:
                 pass
             except Exception as e:
@@ -114,4 +116,5 @@ class ImagerApp:
         self.root.protocol("WM_DELETE_WINDOW", lambda: self.root.quit())
         self.backend_worker.start()
         self.__frontend_worker()
+        self.log(INFO, "Application ready")
         self.root.mainloop()

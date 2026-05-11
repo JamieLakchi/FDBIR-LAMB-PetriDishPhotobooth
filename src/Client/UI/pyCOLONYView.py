@@ -8,10 +8,11 @@ from pathlib import Path
 from PIL import Image, ImageTk
 from typing import Optional
 from skimage.color import label2rgb
+from tkinter import ttk
 
-from src.logs import  INFO, WARN, ERROR
+from src.logs import  INFO
 from src.Client.imagerApp import ImagerApp
-from src.Client.eventBus import CHANGED_CWD, FINISHED_ANALYSIS, SAVE_ANALYZED, SAVE_FINISHED
+from src.Client.eventBus import CHANGED_CWD, FINISHED_ANALYSIS, SAVE_ANALYZED, SAVE_FINISHED, IMAGE_SAVED
 from src.Client.pyCOLONY.file_io import find_images, write_properties_to_file
 from src.Client.pyCOLONY.image_processing import process1
 
@@ -106,7 +107,10 @@ class PyCOLONYView:
                                     self.app.task_backend(lambda: self.__save_analyzed(path)))
         
         self.app.event_bus.register(SAVE_FINISHED, self.id, lambda path: \
-                            self.app.task_backend(lambda: self.__save_analyzed(path, True)))
+                                    self.app.task_backend(lambda: self.__save_analyzed(path, True)))
+        
+        self.app.event_bus.register(IMAGE_SAVED, self.id, lambda path: \
+                                    self.app.task_frontend(self.__load_images))
 
         self.__setup_ui()
 
@@ -140,9 +144,6 @@ class PyCOLONYView:
         """
         Setup if a CWD is available
         """
-        if self.app.state.CWD is not None:
-            self.loaded_images = sorted(set(find_images(self.app.state.CWD)))
-
         # Setup up top image scroll bar
         self.bar_frame = tk.Frame(self.frame)
         self.bar_frame.pack(fill=tk.X, padx=5, pady=5)
@@ -175,11 +176,32 @@ class PyCOLONYView:
         self.working_frame.pack(side=tk.LEFT, fill=tk.BOTH, expand=False, padx=10, pady=10, ipadx=10, ipady=10)
 
         # analysis buttons
-        analyze_button = tk.Button(self.working_frame, text="Analyze", state=tk.DISABLED)
+        analyze_button = ttk.Button(self.working_frame, text="Analyze", state=tk.DISABLED)
         analyze_button.pack(pady=5)
 
-        for path in self.loaded_images:
-            self.__insert_thumbnail(path)
+        self.__load_images()
+
+    def __load_images(self) -> None:
+        if self.app.state.CWD is not None:
+            # Check if thumbnails need to be refreshed
+            CWD_images = set(find_images(self.app.state.CWD))
+            CWD_new_images = CWD_images.difference(self.loaded_images)
+
+            if len(CWD_new_images) == 0:
+                return
+            
+            self.loaded_images = sorted(CWD_images)
+
+            # Redo packing and create new thumbnails if needed
+            for thumbnail in self.thumbnails.values():
+                thumbnail.pack_forget()
+
+            for path in self.loaded_images:
+                if path in self.thumbnails.keys():
+                    self.thumbnails[path].pack(side=tk.LEFT, padx=5, pady=5)
+                else:
+                    self.__insert_thumbnail(path)
+
 
     def __gallery_make_scrollable(self, tkwidget) -> None:
         """Helper function for scrolling bindings """
@@ -315,11 +337,11 @@ class PyCOLONYView:
             analysis_data.analysis_figure.redraw()
 
             # Swap button
-            swap_button = tk.Button(self.working_frame, text="Swap Background", command=analysis_data.analysis_figure.swap)
+            swap_button = ttk.Button(self.working_frame, text="Swap Background", command=analysis_data.analysis_figure.swap)
             swap_button.pack(pady=5)
 
             # Hide regions button
-            hide_regions_button = tk.Button(self.working_frame, text="Hide Regions")
+            hide_regions_button = ttk.Button(self.working_frame, text="Hide Regions")
 
             def toggle_regions():
                 if hide_regions_button.cget("text") == "Hide Regions":
@@ -339,7 +361,7 @@ class PyCOLONYView:
             scroll_frame.pack(pady=5, fill=tk.BOTH, expand=True)
 
             # Mark as finished button
-            finished_button = tk.Button(self.working_frame, text="Unmark" if analysis_data.marked_finished else "Mark Finished")
+            finished_button = ttk.Button(self.working_frame, text="Unmark" if analysis_data.marked_finished else "Mark Finished")
 
             def mark_finished():
                 label = self.thumbnails[path].winfo_children()[-1] # get name label from thumbnail
@@ -361,7 +383,7 @@ class PyCOLONYView:
 
         else:
             # Analysis buttons
-            analyze_button = tk.Button(self.working_frame, text="Analyze")
+            analyze_button = ttk.Button(self.working_frame, text="Analyze")
 
             def on_analyze():
                 analyze_button.config(state="disabled")

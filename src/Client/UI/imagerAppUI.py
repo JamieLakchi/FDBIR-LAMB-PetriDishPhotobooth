@@ -1,12 +1,13 @@
 import tkinter as tk
 
-from typing import TYPE_CHECKING, Optional
+from typing import Optional
 from pathlib import Path
 from tkinter import filedialog
 
-from src.logs import Logger, INFO, WARN, ERROR
+from src.logs import INFO, ERROR
 from src.Client.UI.pyCOLONYView import PyCOLONYView
 from src.Client.UI.logView import LogView
+from src.Client.UI.controllerView import ControllerView
 from src.Client.imagerApp import ImagerApp
 from src.Client.eventBus import CHANGED_CWD, SAVE_ANALYZED, SAVE_FINISHED
 
@@ -73,6 +74,8 @@ class ImagerAppUI:
 
         # imager control frame
         self.imager_frame = tk.Frame(self.main_pane)
+        self.controller_view = ControllerView(self.app, self.imager_frame)
+        self.imager_frame.pack(expand=True, fill=tk.BOTH, padx=10, pady=10)
 
         self.main_pane.add(self.left_pane, width="800")
         self.main_pane.add(self.imager_frame, width="550")

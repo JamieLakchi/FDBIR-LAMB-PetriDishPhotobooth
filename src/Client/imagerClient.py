@@ -1,36 +1,25 @@
 from pathlib import Path
-from typing import Optional
+from typing import Optional, Callable
 from PIL import Image
 
-from src.logs import Logger, INFO, WARN, ERROR
+from src.logs import INFO, ERROR
 from src.Client.imagerClientConnection import ImagerClientConnection
 
 TEST = Path("preview.jpg")
 
 class ImagerClient:
-    def __init__(self, logger: Logger) -> None:
+    def __init__(self, log: Callable[[str, str], None]) -> None:
         """
         Constructs an imager client which handles user inputs
-
-        logger: logger that is being used by frontend (same logfile)
         """
 
-        self.logger = logger
-        self.imagerConnection = ImagerClientConnection(logger)
-
-    def __log(self, type: str, msg: str):
-         """
-         Creates log with name of class attached
-         
-         type: type of log
-         msg: message to log
-         """
-         self.logger.log(type, msg, "ImagerClient")
+        self.__log = log
+        self.imagerConnection = ImagerClientConnection(log)
 
     def connection_repr(self) -> str:
         return str(self.imagerConnection)
 
-    def discover(self, hostname: str) -> None:
+    def discover(self, hostname: str) -> Optional[str]:
         """
         Looks for IP address of Raspberry Pi using mDNS and tries to connect on protocol port
 
@@ -40,29 +29,41 @@ class ImagerClient:
 
         ip = self.imagerConnection.discover(hostname)
 
+        if ip is None:
+            return
+
         self.__log(INFO, f"found hostname at {ip}, attempting connection")
         
-        self.imagerConnection.connect(ip)
+        if self.imagerConnection.connect(ip) is None:
+            return
 
-        self.__log(INFO, f"connected successfully to {ip}@protocol_port")
+        self.__log(INFO, f"connected successfully to {self.imagerConnection}")
+
+        return ip
     
-    def capture_preview(self) -> Image.Image:
+    def capture_preview(self) -> Optional[Image.Image]:
         """Captures a preview image"""
         self.__log(INFO, "attempting capture of preview")
 
         image = self.imagerConnection.capture(preview=True)
 
+        if image is None:
+            return
+
         return image
     
-    def capture_main(self, filepath: Path) -> Image.Image:
+    def capture_main(self, filepath: Path) -> Optional[Image.Image]:
         """Captures a main image"""
         if filepath.exists():
             self.__log(ERROR, f"path {filepath} already exists; aborting")
-            raise FileExistsError(f"path {filepath} already exists; aborting")
+            return
 
         self.__log(INFO, "attempting capture of main")
 
         image = self.imagerConnection.capture(preview=False)
+
+        if image is None:
+            return
 
         self.__log(INFO, "received main image")
 
@@ -71,9 +72,8 @@ class ImagerClient:
         self.__log(INFO, f"stored main capture at {filepath}")
 
         return image
+
     
     def power_off(self) -> None:
-        """Sends power off signal"""
-        self.__log(INFO, "shutting down product")
-        
+        """Sends power off signal"""        
         self.imagerConnection.power_off()

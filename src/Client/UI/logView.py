@@ -31,7 +31,7 @@ class LogView:
             "<Configure>",
             lambda e: self.canvas.configure(scrollregion=self.canvas.bbox("all"))
         )
-        
+
         self.canvas.create_window((0, 0), window=self.scrollable_frame, anchor="nw")
         self.canvas.configure(yscrollcommand=scrollbar.set)
 
@@ -39,6 +39,7 @@ class LogView:
         scrollbar.pack(side="right", fill="y")
         
         self.__make_scrollable(self.canvas)
+        self.__make_scrollable(self.scrollable_frame)
 
         self.__update_ui()
 
@@ -61,4 +62,6 @@ class LogView:
             label.pack(fill="x", padx=5, pady=2)
             self.__make_scrollable(label)
         
-        self.canvas.yview_moveto(1.0)
+        self.scrollable_frame.update_idletasks()
+
+        self.canvas.yview_moveto(1)

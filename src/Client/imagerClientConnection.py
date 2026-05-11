@@ -1,54 +1,43 @@
 import io
 import socket
 
-from typing import Optional
+from typing import Optional, Callable
 from PIL import Image
 
 from src.connections import Connection, RequestType, rtob, PROTOCOL_PORT
-from src.logs import Logger, INFO, WARN, ERROR
-from src.exceptions import HostNotFound, ConnectionRefused, NoConnectionAvailable, CaptureFailed
+from src.logs import ERROR
+from src.exceptions import CaptureFailed
 
 class ImagerClientConnection:
-    def __init__(self, logger: Logger) -> None:
+    def __init__(self, log: Callable[[str, str], None]) -> None:
         """
         Constructs client side of connection
 
         logger: logger that is being used by frontend (same logfile)
         """
-        self.logger = logger
+        self.__log = log
         self.hostname : Optional[str] = None
         self.connection : Optional[Connection] = None
 
-    def __log(self, type: str, msg: str):
-         """
-         Creates log with name of class attached
-         
-         type: type of log
-         msg: message to log
-         """
-         self.logger.log(type, msg, "ImagerClientConnection")
-
-    def discover(self, hostname: str) -> str:
+    def discover(self, hostname: str) -> Optional[str]:
         """
         Looks for IP of host using hostname and mDNS
 
         hostname: string with canonical hostname
         """
-        self.__log(INFO, f"looking for IP of {hostname}")
         
         try:
             ip = socket.gethostbyname(hostname)
-            self.__log(INFO, f"found {hostname}@{ip}")
             self.hostname = hostname
         except:
             self.__log(ERROR, f"could not find {hostname} on network")
-            raise HostNotFound(f"could not find {hostname} on network")
+            return
 
         return ip
     
-    def connect(self, ip: str) -> None:
+    def connect(self, ip: str) -> Optional[str]:
         """
-        Connects to ip at protocol port
+        Connects to ip at protocol port, returns ip on success, else None
 
         ip: string with IPv4 address
         """
@@ -59,33 +48,40 @@ class ImagerClientConnection:
             self.connection = Connection(sock)
         except:
             self.__log(ERROR, f"could not connect to {ip}@{PROTOCOL_PORT}")
-            raise ConnectionRefused(f"could not connect to {ip}@{PROTOCOL_PORT}")
+            return
         
+        return ip
+    
     def __close(self) -> None:
         if self.connection is not None:
             self.connection.close()
 
         self.connection = None
 
-    def check_connection(self) -> Connection:
+    def check_connection(self) -> Optional[Connection]:
         """
         Checks if the connection is still up, raises NoConnectionAvailble if not
         """
         if self.connection is None:
-            raise NoConnectionAvailable()
+            self.__log(ERROR, "No connection available")
+            return
         
         try:
             self.connection.send_fmsg(rtob(RequestType.CHECK_CONNECTED))
             msg = self.connection.recv_fmsg()
         except:
+            self.__log(ERROR, "No connection available")
             self.__close()
-            raise NoConnectionAvailable()
+            return
         
         return self.connection
     
-    def capture(self, preview = True) -> Image.Image:
+    def capture(self, preview = True) -> Optional[Image.Image]:
         """Sends capture request, preview = True captures preview, False captures main"""
         connection = self.check_connection()
+
+        if connection is None:
+            return
 
         connection.send_fmsg(rtob(RequestType.CAPTURE_PREVIEW if preview else RequestType.CAPTURE_MAIN))
         
@@ -98,10 +94,12 @@ class ImagerClientConnection:
             preview_image = Image.open(io.BytesIO(preview_bytes))
 
         except CaptureFailed as e:
-            raise e
+            self.__log(ERROR, "Capture failed")
+            return
         except:
+            self.__log(ERROR, "No connection available")
             self.__close()
-            raise NoConnectionAvailable()
+            return
 
         return preview_image
     
@@ -110,7 +108,8 @@ class ImagerClientConnection:
         
         try:
             connection = self.check_connection()
-            connection.send_fmsg(rtob(RequestType.POWER_OFF))
+            if not connection is None:
+                connection.send_fmsg(rtob(RequestType.POWER_OFF))
         finally:
             self.__close()
 

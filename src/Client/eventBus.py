@@ -13,6 +13,8 @@ SAVE_ANALYZED = "<Save-Analyzed>" # (path: Path)
 
 SAVE_FINISHED = "<Save-Finished>" # (path: Path)
 
+IMAGE_SAVED = "<Image-Saved>" # (path: Path)
+
 #===============================================================================
 
 """
