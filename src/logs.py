@@ -23,7 +23,7 @@ def format_log(type: str, msg: str, name: Optional[str] = None) -> str:
     return f"[{type}]{name_part} - {datetime.datetime.now().strftime('%Y/%m/%d %H:%M:%S')} ; {msg}\n"
 
 class Logger:
-    def __init__(self, logfile : Path = Path("logs.txt"), rollingRecordCount : Optional[int] = 50) -> None:
+    def __init__(self, logfile : Path = Path("logs.txt"), rollingRecordCount : int = 50) -> None:
         """
         Constructs simple logger object that logs to stdout and a file
 
@@ -31,6 +31,7 @@ class Logger:
         rollingRecordCount: amount of logs to keep in logfile
         """
         self.logfile = logfile
+        self.rollingRecordCount = rollingRecordCount
         self.logs : list[str] = []
 
     def log(self, type: str, msg: str, name: Optional[str] = None) -> str:
@@ -43,7 +44,7 @@ class Logger:
         log = format_log(type, msg, name)
 
         self.logs.append(log)
-        self.logs = self.logs[-50:]
+        self.logs = self.logs[-self.rollingRecordCount:]
 
         self.__log_tofile(log)
         self.__log_tostdout(log)

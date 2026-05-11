@@ -8,26 +8,28 @@ from PIL import Image, ImageTk
 from tkinter import ttk, filedialog
 from concurrent.futures import ThreadPoolExecutor
 
-from src.logs import Logger, INFO, WARN, ERROR
-from src.exceptions import NoConnectionAvailable
-from src.Client.imagerClient import ImagerClient
-
-# black square default image
-DEFAULT_IMAGE = Image.new('RGB', (400, 300), color='black')
+from src.logs import format_log, INFO, WARN, ERROR
+from src.Client.imagerAppState import ImagerAppState
+from src.Client.eventBus import EventBus, LOG
 
 class ImagerApp:
-    def __init__(self, logfile : Path = Path("logs/client_logs.txt"), rollingRecordCount : Optional[int] = 50) -> None:
+    def __init__(self, logfile : Path = Path("logs/client_logs.txt"), rollingRecordCount : int = 50) -> None:
         """
         ImagerApp constructor
         
         logfile: path to record file of logs
         rollingRecordCount: amount of logs to keep in logfile
         """
-        self.logger = Logger(logfile, rollingRecordCount)
 
-        self.root = tk.Tk()
-        self.root.title("Camera Controller")
-        self.root.geometry("600x750")
+        from src.Client.UI.imagerAppUI import ImagerAppUI   # lazy import to prevent circular importing
+                                                            # due to type annotations
+
+        self.state = ImagerAppState(rollingRecordCount)
+        self.event_bus = EventBus()
+
+        self.system_id = self.event_bus.getId()
+
+        self.logfile = logfile
 
         self.frontend_tasks : queue.Queue[Callable[[], None]] = queue.Queue()
 
@@ -35,27 +37,40 @@ class ImagerApp:
         self.backend_worker = threading.Thread(target=self.__backend_worker, daemon=True)
         self.backend_executor = ThreadPoolExecutor(max_workers=3)
 
-        self.imagerClient = ImagerClient(self.logger)
+        self.root = tk.Tk()
+        self.root.title("Petri Dish Imager")
+        self.root.geometry("1350x750")
 
-    def __log(self, type: str, msg: str) -> None:
-        """
-        Logs an item
+        self.UI = ImagerAppUI(self)
 
-        type: type of log
-        msg: message to log
+    def emit(self, event:str, **kwargs):
         """
-        if type in [WARN, ERROR]:
-            self.logging_label.configure(foreground="red")
-        else:
-            self.logging_label.configure(foreground="black")
-        log = self.logger.log(type, msg, "ImagerApp")
-        self.logging_var.set(log)
+        Places an event in the backend tasks queue; event callbacks are performed in the backend
+        (if frontend changes are required, use callback to place a task in the frontend queue)
+        """
+        self.task_backend(lambda: self.event_bus.emit(event, **kwargs))
 
-    def __backend_log(self, type: str, msg: str) -> None:
+    def log(self, type: str, message: str, name: str = "System"):
         """
-        Thread safe version of log
+        Emits log event via backend task
         """
-        self.frontend_tasks.put(lambda: self.__log(type, msg))
+        log = format_log(type, message, name)
+        print(log, end="")
+        self.state.addLog(log)
+        self.state.writeLogs(self.logfile)
+        self.emit(LOG, type=type, msg=message, name=name)
+
+    def task_backend(self, task: Callable[[], None]) -> None:
+        """
+        Place task in backend queue; for computation, networking, etc.
+        """
+        self.backend_tasks.put(task)
+
+    def task_frontend(self, task: Callable[[], None]) -> None:
+        """
+        Place taks in frontend queue; for changing frontend state
+        """
+        self.frontend_tasks.put(task)
 
     def __frontend_worker(self) -> None:
         """
@@ -67,9 +82,15 @@ class ImagerApp:
         except queue.Empty:
             pass
         except Exception as e:
-            self.__log(ERROR, str(e))
+            self.log(ERROR, str(e))
 
-        self.root.after(50, self.__frontend_worker)
+        self.root.after(30, self.__frontend_worker)
+
+    def __dispatch_backend_executor(self, command: Callable[[], None]) -> None:
+        try:
+            command()
+        except Exception as e:
+            self.log(ERROR, str(e))
 
     def __backend_worker(self) -> None:
         """
@@ -84,208 +105,13 @@ class ImagerApp:
             except queue.Empty:
                 pass
             except Exception as e:
-                self.__backend_log(ERROR, str(e))
-
-    def __dispatch_backend_executor(self, command: Callable[[], None]) -> None:
-        try:
-            command()
-        except Exception as e:
-            self.__backend_log(ERROR, str(e))
-
-    def _discover(self) -> None:
-        """
-        Backend method to discover IP using mDNS and connect to RPI
-        """
-        hostname = self.address_var.get()
-
-        if hostname is None:
-            self.__backend_log(ERROR, "no hostname provided")
-            return
-        
-        self.__backend_log(INFO, f"looking for {hostname}")
-        self.imagerClient.discover(hostname)
-            
-        self.__backend_log(INFO, f"connected to {self.imagerClient.connection_repr()}")
-
-        self.frontend_tasks.put(lambda: self._switch_discover_btn("Shutdown"))
-
-    def _capture_preview(self) -> None:
-        """backend method for captring a preview (lower resolution) image"""
-        try:
-            self.__backend_log(INFO, f"capturing preview")
-
-            preview_image = self.imagerClient.capture_preview()
-
-            self.frontend_tasks.put(lambda: self._complete_capture(preview_image))
-        except Exception as e:
-            self.frontend_tasks.put(lambda: self._set_capture_buttons(disabled=False))
-            raise e
-
-    def _capture_main(self) -> None:
-        """backend method for captring a preview (higher resolution) image"""
-        try:
-            directory = self.dir_var.get()
-
-            if directory == "Select directory...":
-                self.__backend_log(ERROR, "please select a directory")
-                self.frontend_tasks.put(lambda: self._set_capture_buttons(disabled=False))
-                return
-            
-            fname = self.fname_var.get()
-
-            if fname == "":
-                self.__backend_log(ERROR, "please choose a file name")
-                self.frontend_tasks.put(lambda: self._set_capture_buttons(disabled=False))
-                return
-            
-            fpath = Path(directory) / Path(fname)
-
-            self.__backend_log(INFO, f"capturing main")
-
-            main_image = self.imagerClient.capture_main(fpath)
-
-            self.frontend_tasks.put(lambda: self._complete_capture(main_image))
-
-            self.__backend_log(INFO, f"captured main (stored at {fpath})")
-        except Exception as e:
-            self.frontend_tasks.put(lambda: self._set_capture_buttons(disabled=False))
-            raise e
-
-    def _start_capture(self, preview: bool) -> None:
-        """
-        Frontend wrapper for starting a capture
-        """
-        self._set_capture_buttons(disabled=True)
-
-        if preview:
-            self.backend_tasks.put(self._capture_preview)
-        else:
-            self.backend_tasks.put(self._capture_main)
-
-    def _complete_capture(self, image: Image.Image) -> None:
-        """
-        Frontend wrapper for ending a capture
-        """        
-        self._display_image(image)
-        self.__log(INFO, "showing new image")
-        self._set_capture_buttons(disabled=False)
-
-    def _power_off(self) -> None:
-        try:
-            self.imagerClient.power_off()
-            self.__backend_log(INFO, f"powering off RPI (wait a moment before unplugging)")
-        except:
-            self.__backend_log(ERROR, "no connection found")
-        finally:
-            self.frontend_tasks.put(lambda: self._switch_discover_btn("Discover"))
-
-    def __setup_ui(self) -> None:
-        """
-        Set up the user interface elements and assign certain variables
-        """
-        # Top frame for address input and discover button
-        top_frame = ttk.Frame(self.root, padding="10")
-        top_frame.grid(row=0, column=0, sticky=tk.W + tk.E)
-        
-        # Address input
-        self.address_var = tk.StringVar(value="raspberrypi.local")
-        self.address_entry = ttk.Entry(top_frame, textvariable=self.address_var, width=30)
-        self.address_entry.grid(row=0, column=0, padx=(0, 10), sticky=tk.W + tk.E)
-        
-        # Discover button
-        self.discover_btn = ttk.Button(top_frame, text="Discover", command=lambda: self.backend_tasks.put(self._discover))
-        self.discover_btn.grid(row=0, column=1, sticky=tk.W)
-        
-        # Preview capture button
-        self.preview_btn = ttk.Button(self.root, text="Capture Preview", command=lambda: self._start_capture(preview=True))
-        self.preview_btn.grid(row=1, column=0, padx=10, pady=10, sticky=tk.W + tk.E)
-        
-        # Image display area
-        self.image_tk = ImageTk.PhotoImage(DEFAULT_IMAGE)
-        self.image_label = ttk.Label(self.root, image=self.image_tk)
-        self.image_label.grid(row=2, column=0, padx=10, pady=10)
-        
-        # Main capture button
-        self.main_btn = ttk.Button(self.root, text="Capture Main", command=lambda: self._start_capture(preview=False))
-        self.main_btn.grid(row=3, column=0, padx=10, pady=10, sticky=tk.W + tk.E)
-        
-        # Directory selection frame
-        dir_frame = ttk.Frame(self.root, padding="10")
-        dir_frame.grid(row=4, column=0, sticky=tk.W + tk.E, pady=10)
-        
-        # Directory path display
-        self.dir_var = tk.StringVar(value="Select directory...")
-        dir_label = ttk.Label(dir_frame, textvariable=self.dir_var, background="white", 
-                             relief="sunken", padding="5")
-        dir_label.grid(row=0, column=0, sticky=tk.W + tk.E, padx=(0, 10))
-        dir_label.bind("<Button-1>", func=self._choose_directory)  # Click to choose directory
-        
-        # Filename input
-        self.fname_var = tk.StringVar(value="image.jpg")
-        self.fname_entry = ttk.Entry(dir_frame, textvariable=self.fname_var)
-        self.fname_entry.grid(row=0, column=1, sticky=tk.E)
-        
-        # Error display area at the bottom
-        logging_frame = ttk.Frame(self.root, padding="10")
-        logging_frame.grid(row=5, column=0, sticky=tk.W + tk.E + tk.S, pady=10)
-        
-        self.logging_var = tk.StringVar(value="Starting up...")
-        self.logging_label = ttk.Label(logging_frame, textvariable=self.logging_var, 
-                               foreground="black", wraplength=550, justify=tk.LEFT)
-        self.logging_label.grid(row=0, column=0, sticky=tk.W + tk.E)
-        
-        # Configure grid weights for resizing
-        self.root.columnconfigure(0, weight=1)
-        top_frame.columnconfigure(0, weight=1)
-        dir_frame.columnconfigure(0, weight=1)
-        logging_frame.columnconfigure(0, weight=1)
-        self.root.rowconfigure(2, weight=1)
-
-    def _choose_directory(self, event: tk.Event) -> None:
-        """Open directory chooser dialog"""
-        directory = filedialog.askdirectory(
-            title="Select directory to save images",
-            initialdir=Path.cwd()
-        )
-        
-        if directory:
-            self.dir_var.set(directory)
-            self.__log(INFO, f"Selected directory: {directory}")
-
-    def _display_image(self, image: Image.Image):
-        """Update the image display with a new image"""
-        image.save(Path("__current_preview.jpg"))
-        
-        if image.size != (400, 300):
-            image = image.resize((400, 300))
-
-        self.image_tk = ImageTk.PhotoImage(image)
-        self.image_label.configure(image=self.image_tk)
-
-    def _switch_discover_btn(self, newFunction : Union[Literal["Discover"],Literal["Shutdown"]]) -> None:
-        if newFunction == "Discover":
-            self.discover_btn.configure(text="Discover", command=lambda: self.backend_tasks.put(self._discover))
-        else:
-            self.discover_btn.configure(text="Shutdown", command=lambda: self.backend_tasks.put(self._power_off))
-
-    def _set_capture_buttons(self, disabled: bool) -> None:
-        state = "disabled" if disabled else "enabled"
-        self.main_btn.configure(state=state)
-        self.preview_btn.configure(state=state)
+                self.log(ERROR, str(e))
 
     def start(self) -> None:
         """
         Start the application (stalls main thread by tk.Tk.mainloop())
         """
-        self.__setup_ui()
-        self.__log(INFO, "Application ready")
+        self.root.protocol("WM_DELETE_WINDOW", lambda: self.root.quit())
         self.backend_worker.start()
         self.__frontend_worker()
         self.root.mainloop()
-
-
-if __name__ == "__main__":
-
-    app = ImagerApp()
-    app.start()
-
