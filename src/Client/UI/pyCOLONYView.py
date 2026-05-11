@@ -314,11 +314,12 @@ class PyCOLONYView:
                 r.set_visible(bool(v.get()))    # Hides on plot
                 self.analysis_cache[p].analysis_figure.redraw()
 
-            cb = tk.Checkbutton(
+            cb = ttk.Checkbutton(
                 scrollable_frame,
                 text=str(label),
                 variable=var,
-                command=on_check
+                command=on_check,
+                style='TCheckbutton'
             )
             cb.pack(anchor="w", pady=1)
             __make_scrollable(cb)
