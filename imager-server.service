@@ -1,0 +1,17 @@
+[Unit]
+Description=Starts Imager Service Server
+After=network.target rpi-usb-gadget-ics.service
+Wants=rpi-usb-gadget-ics.service
+
+[Service]
+Type=simple
+User=root
+WorkingDirectory=/home/pi/imager
+ExecStart=/home/pi/imager/env/bin/python -m src.run -t imager
+Restart=on-failure
+RestartSec=5
+StandardOutput=journal
+StandardError=journal
+
+[Install]
+WantedBy=multi-user.target
