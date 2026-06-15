@@ -60,8 +60,7 @@ class ImagerCtl:
                             "--width", "2312",
                             "--height", "1736",
                             "-n", "--autofocus-on-capture",
-                            "--denoise", "cdn_off",
-                            "--awb", "tungsten"]).returncode
+                            "--denoise", "cdn_off"]).returncode
         
         if exit_code:
             self.__log(ERROR, "failed to capture preview")
