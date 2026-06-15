@@ -85,6 +85,7 @@ class ControllerView:
             main_image = self.imagerClient.capture_main(fpath)
 
             if main_image is None:
+                self.app.task_frontend(lambda: self._set_capture_buttons(disabled=False))
                 return
 
             self.app.emit(IMAGE_SAVED, path=fpath)
