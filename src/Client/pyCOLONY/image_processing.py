@@ -1,6 +1,7 @@
 import os
 import datetime
 import math
+import itertools
 import numpy as np
 import pandas as pd
 import matplotlib.pyplot as plt
@@ -9,7 +10,7 @@ import matplotlib.figure as mfig
 
 import cv2
 
-from skimage.color import rgb2gray, label2rgb
+from skimage.color import rgb2gray, gray2rgb, label2rgb, color_dict
 from skimage.morphology import disk
 from skimage.exposure import rescale_intensity
 from skimage.morphology import remove_small_objects
@@ -193,12 +194,28 @@ def get_selected_properties(region_props) -> pd.DataFrame:
     
     return pd.DataFrame(properties)
 
+def cutout(image: Image.Image) -> Image.Image:
+
+    return Image.Image()
 
 def process1(path: Path) -> tuple[pd.DataFrame, dict[str, Any]]:
     """
     Process a single image; returns properties and labeled image
     """
     with Image.open(path) as image:
+        width, height = image.size
+
+        if width > 4000:
+            ratio = width//4000
+            height = height//ratio
+            width = 4000
+
+        if height > 4000:
+            ratio = height//4000
+            width = width//ratio
+            height = 4000
+
+        image = image.resize((width, height), Image.Resampling.LANCZOS)
         image_array = np.array(image)
         processed = simple_preprocess(image_array)
         region_props, colony_labels = label_colonies(processed)
@@ -211,3 +228,34 @@ def process1(path: Path) -> tuple[pd.DataFrame, dict[str, Any]]:
             "colony_labels": colony_labels,
             "region_properties": region_props
         }
+    
+def label2rgboverlay(labels: np.ndarray, image: np.ndarray) -> np.ndarray:
+    DEFAULT_COLORS = (
+        'red',
+        'blue',
+        'yellow',
+        'magenta',
+        'green',
+        'indigo',
+        'darkorange',
+        'cyan',
+        'pink',
+        'yellowgreen',
+    )
+
+    colors = [color_dict[c] for c in DEFAULT_COLORS]
+
+    grayscale_image = rgb2gray(image)
+    grayscale_image = np.stack([grayscale_image,grayscale_image,grayscale_image], axis=-1)
+
+    dense_labels, inverse_label_matrix = np.unique(labels, return_inverse=True)
+
+    color_cycle = itertools.cycle(colors)
+    color_cycle = itertools.chain([(0,0,0)], color_cycle)
+
+    label_to_color = np.stack([c for i, c in zip(range(len(dense_labels)), color_cycle)])
+    result = label_to_color[inverse_label_matrix] * 0.3 + grayscale_image * 0.7
+
+    return result
+
+    

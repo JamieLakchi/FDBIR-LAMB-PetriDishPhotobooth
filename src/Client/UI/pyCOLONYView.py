@@ -7,14 +7,13 @@ from dataclasses import dataclass
 from pathlib import Path
 from PIL import Image, ImageTk
 from typing import Optional
-from skimage.color import label2rgb
 from tkinter import ttk
 
 from src.logs import  INFO
 from src.Client.imagerApp import ImagerApp
 from src.Client.eventBus import CHANGED_CWD, FINISHED_ANALYSIS, SAVE_ANALYZED, SAVE_FINISHED, IMAGE_SAVED
 from src.Client.pyCOLONY.file_io import find_images, write_properties_to_file
-from src.Client.pyCOLONY.image_processing import process1
+from src.Client.pyCOLONY.image_processing import process1, label2rgboverlay
 
 import matplotlib
 matplotlib.use("TkAgg")
@@ -405,7 +404,11 @@ class PyCOLONYView:
         """
         Creates a labaled plot for display purposes;
         """
-        image_label_overlay = label2rgb(colony_labels, image=original, bg_label=0)
+        # Typically done with label2rgb but skimage implementation is too memory inefficient
+
+        image_label_overlay = label2rgboverlay(colony_labels, original)
+
+        # ==================================================================================
 
         analysis_figure_regions = {}
 
@@ -431,7 +434,7 @@ class PyCOLONYView:
                         fontsize=6)
             
             analysis_figure_regions[region.label] = AnalysisFigureRegion(rect, ann, True)
-            
+        
         ax.set_axis_off()
 
         return AnalysisFigure(fig, False, axim_original, axim_overlay, analysis_figure_regions)
@@ -447,6 +450,8 @@ class PyCOLONYView:
         props, aux = process1(path)
 
         def process_plot():
+            self.log(INFO, "Done processing image, plotting...")
+
             analysis_figure = self.__create_fig(aux["original"], aux["region_properties"], aux["colony_labels"])
 
             self.analysis_cache[path] = AnalysisData(False, props, analysis_figure)
