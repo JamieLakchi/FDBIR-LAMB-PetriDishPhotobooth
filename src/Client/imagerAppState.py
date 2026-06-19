@@ -28,5 +28,8 @@ class ImagerAppState:
         """
         Write logs to logfile
         """
+        if not logfile.parent.is_dir():
+            logfile.parent.mkdir(parents=True)
+
         with logfile.open("w") as f:
             f.writelines(self.logs)  
