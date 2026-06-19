@@ -1,10 +1,11 @@
+import datetime
 import tkinter as tk
 
 from typing import Optional
 from pathlib import Path
 from tkinter import filedialog
 
-from src.logs import INFO, ERROR
+from src.logs import INFO, ERROR, WARN
 from src.Client.UI.pyCOLONYView import PyCOLONYView
 from src.Client.UI.logView import LogView
 from src.Client.UI.controllerView import ControllerView
@@ -145,8 +146,13 @@ class ImagerAppUI:
         
         # Check if directory is empty
         if any(path.iterdir()):
-            self.app.log(ERROR, f"Chosen directory {path} is not empty")
-            return
+            self.app.log(WARN, f"Chosen directory {path} is not empty")
+            # People are too lazy to make a directory ahead of the analysis,
+            # so an automated result folder would be great
+            timestamp = datetime.datetime.now().strftime("%d%m%Y_%H%M%S")
+            path = path / f"results_{timestamp}"
+            path.mkdir(exist_ok=True, parents=True)
+            self.app.log(INFO, f"Creating and using {path} directory")
 
         self.app.emit(SAVE_ANALYZED, path=path)
 
