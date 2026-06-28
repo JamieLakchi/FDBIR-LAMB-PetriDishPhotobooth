@@ -1,6 +1,3 @@
-import os
-import skimage
-
 import pandas as pd
 
 from pathlib import Path

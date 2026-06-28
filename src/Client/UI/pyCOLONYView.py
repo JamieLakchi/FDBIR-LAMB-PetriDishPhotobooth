@@ -201,7 +201,6 @@ class PyCOLONYView:
                 else:
                     self.__insert_thumbnail(path)
 
-
     def __gallery_make_scrollable(self, tkwidget) -> None:
         """Helper function for scrolling bindings """
         tkwidget.bind("<MouseWheel>", lambda e: self.canvas.xview_scroll(int(-1*(e.delta/120)), "units"))
