@@ -9,12 +9,13 @@ from PIL import Image, ImageTk
 from typing import Optional
 from tkinter import ttk
 
-from src.logs import  INFO
+from src.logs import INFO, ERROR
 from src.Client.imagerApp import ImagerApp
 from src.Client.eventBus import CHANGED_CWD, FINISHED_ANALYSIS, SAVE_ANALYZED, SAVE_FINISHED, IMAGE_SAVED
 from src.Client.pyCOLONY.file_io import find_images, write_properties_to_file
 from src.Client.pyCOLONY.image_processing import process1, label2rgboverlay
 
+import gc
 import matplotlib
 matplotlib.use("TkAgg")
 
@@ -49,6 +50,16 @@ class AnalysisFigure:
     figure_labeled_image: AxesImage
     figure_regions: dict[int, AnalysisFigureRegion]
 
+    def close(self):
+        self.figure.clear()
+        plt.close(self.figure)
+        if hasattr(self.figure, 'canvas') and self.figure.canvas is not None:
+            try:
+                self.figure.canvas.get_tk_widget().destroy()
+            except:
+                pass
+            self.figure.canvas = None
+
     def swap(self) -> None:
         self.currently_displaying_original = not self.currently_displaying_original
         self.figure_original_image.set_visible(self.currently_displaying_original)
@@ -78,17 +89,17 @@ class AnalysisFigure:
 
 @dataclass
 class AnalysisData:
-    marked_finished: bool
     region_properties: pd.DataFrame
     analysis_figure: AnalysisFigure
-
-    def mark_finished(self, mark: bool) -> None:
-        self.marked_finished = mark
 
 #===============================================================================
 
 """
 Class describes the behaviour of the pyCOLONY pane
+
+NOTE: Originally, this class depended centrally on the analysis_cache dictionary.
+This cache grew very large and also became redundant due to later optimisations.
+It only still exists now due to coupling -- every time a new image is analyzed, others get cleared.
 """
 class PyCOLONYView:
     def __init__(self, app: ImagerApp, frame: tk.Frame) -> None:
@@ -101,12 +112,6 @@ class PyCOLONYView:
         
         self.app.event_bus.register(FINISHED_ANALYSIS, self.id, lambda path:\
                                     self.app.task_frontend(lambda: self.__on_finished_analysis(path)))
-        
-        self.app.event_bus.register(SAVE_ANALYZED, self.id, lambda path: \
-                                    self.app.task_backend(lambda: self.__save_analyzed(path)))
-        
-        self.app.event_bus.register(SAVE_FINISHED, self.id, lambda path: \
-                                    self.app.task_backend(lambda: self.__save_analyzed(path, True)))
         
         self.app.event_bus.register(IMAGE_SAVED, self.id, lambda path: \
                                     self.app.task_frontend(self.__load_images))
@@ -127,7 +132,15 @@ class PyCOLONYView:
             widget.destroy()
 
         self.loaded_images: list[Path] = []
+        self.marked_images: set[Path] = set()
         self.thumbnails: dict[Path, tk.Frame] = {}
+
+        if hasattr(self, "analysis_cache"):
+            for data in self.analysis_cache.values():
+                data.analysis_figure.close()
+            self.analysis_cache.clear()
+            gc.collect()
+
         self.analysis_cache: dict[Path, AnalysisData] = {}
 
         self.current_selected: Optional[Path] = None
@@ -174,9 +187,12 @@ class PyCOLONYView:
         self.working_frame = tk.Frame(self.frame)
         self.working_frame.pack(side=tk.LEFT, fill=tk.BOTH, expand=False, padx=10, pady=10, ipadx=10, ipady=10)
 
-        # analysis buttons
+        # Analysis buttons
         analyze_button = ttk.Button(self.working_frame, text="Analyze", state=tk.DISABLED)
-        analyze_button.pack(pady=5)
+        analyze_button.grid(row=0, column=0, pady=5, sticky="ew")
+
+        finished_button = ttk.Button(self.working_frame, text="Mark Finished", state=tk.DISABLED)
+        finished_button.grid(row=1, column=0, pady=5, sticky="ew")
 
         self.__load_images()
 
@@ -323,9 +339,6 @@ class PyCOLONYView:
             __make_scrollable(cb)
 
     def __setup_working_controls(self, path: Path) -> None:
-        """
-        Loads required controls for given image
-        """
         for widget in self.working_frame.winfo_children():
             widget.destroy()
 
@@ -336,8 +349,9 @@ class PyCOLONYView:
             analysis_data.analysis_figure.redraw()
 
             # Swap button
-            swap_button = ttk.Button(self.working_frame, text="Swap Background", command=analysis_data.analysis_figure.swap)
-            swap_button.pack(pady=5)
+            swap_button = ttk.Button(self.working_frame, text="Swap Background",
+                                    command=analysis_data.analysis_figure.swap)
+            swap_button.grid(row=0, column=0, pady=5, sticky="ew")
 
             # Hide regions button
             hide_regions_button = ttk.Button(self.working_frame, text="Hide Regions")
@@ -352,52 +366,97 @@ class PyCOLONYView:
                 analysis_data.analysis_figure.redraw()
 
             hide_regions_button.config(command=toggle_regions)
-            hide_regions_button.pack(pady=5)
+            hide_regions_button.grid(row=1, column=0, pady=5, sticky="ew")
 
-            # List of checkboxes for each label
+            # Scrollable checklist
             scroll_frame = tk.Frame(self.working_frame)
             self.__setup_region_checklist(scroll_frame, path)
-            scroll_frame.pack(pady=5, fill=tk.BOTH, expand=True)
+            scroll_frame.grid(row=2, column=0, pady=5, sticky="nsew")
+            self.working_frame.grid_rowconfigure(2, weight=1)   # ★ expand only this row
+            self.working_frame.grid_columnconfigure(0, weight=1)
 
-            # Mark as finished button
-            finished_button = ttk.Button(self.working_frame, text="Unmark" if analysis_data.marked_finished else "Mark Finished")
+            # Save button
+            save_button = ttk.Button(self.working_frame, text="Save")
 
-            def mark_finished():
-                label = self.thumbnails[path].winfo_children()[-1] # get name label from thumbnail
-                f = tkFont.Font(label, label.cget("font"))
+            def _save():
+                if self.app.state.CWD is None:
+                    self.log(ERROR, "No CWD available, could not store analysis artifacts")
+                    return
+                dir = self.app.UI.prompt_directory(
+                    f"Choose a directory to store analysis artifacts (not in {self.app.state.CWD})",
+                    self.app.state.CWD.parent
+                )
+                if dir is None:
+                    return
+                self.__save_analyzed(path=path, store_dir=dir)
 
-                if finished_button.cget("text") == "Mark Finished":
-                    finished_button.config(text="Unmark")
-                    analysis_data.mark_finished(True)
-                    f.configure(underline = True)
-                else:
-                    finished_button.config(text="Mark Finished")
-                    analysis_data.mark_finished(False)
-                    f.configure(underline = False)
-                
-                label.config(font=f) # type: ignore
+            save_button.config(command=_save)
+            save_button.grid(row=3, column=0, pady=5, sticky="ew")
 
-            finished_button.config(command=mark_finished)
-            finished_button.pack(pady=5)
+            # Cancel button
+            cancel_button = ttk.Button(self.working_frame, text="Cancel")
+
+            def _cancel():
+                if path in self.analysis_cache:
+                        if self.current_selected == path:
+                            for widget in self.large_frame.winfo_children():
+                                widget.destroy()
+                        self.analysis_cache[path].analysis_figure.close()
+                        del self.analysis_cache[path]
+                        gc.collect()
+                self.__select_image_from_gallery(path, True)
+
+            cancel_button.config(command=_cancel)
+            cancel_button.grid(row=4, column=0, pady=5, sticky="ew")
 
         else:
-            # Analysis buttons
             analyze_button = ttk.Button(self.working_frame, text="Analyze")
 
             def on_analyze():
                 analyze_button.config(state="disabled")
                 self.app.task_backend(lambda: self.__analyze_image(path))
-  
+
             analyze_button.config(command=on_analyze)
-            analyze_button.pack(pady=5)
+            analyze_button.grid(row=0, column=0, pady=5, sticky="ew")
+
+        # Finished button
+        finished_button = ttk.Button(self.working_frame,
+                                    text="Unmark" if path in self.marked_images else "Mark Finished")
+
+        def mark_finished():
+            label = self.thumbnails[path].winfo_children()[-1]
+            f = tkFont.Font(label, label.cget("font"))
+            if finished_button.cget("text") == "Mark Finished":
+                finished_button.config(text="Unmark")
+                self.marked_images.add(path)
+                f.configure(underline=True)
+            else:
+                finished_button.config(text="Mark Finished")
+                self.marked_images.remove(path)
+                f.configure(underline=False)
+            label.config(font=f) # type: ignore
+
+        finished_button.config(command=mark_finished)
+        finished_button.grid(row=5 if path in self.analysis_cache else 1,
+                            column=0, pady=5, sticky="ew")
 
     def __on_finished_analysis(self, path: Path) -> None:
         """
         When an analysis finishes, layout should change if currently selected
         """
         self.log(INFO, f"Finished analysis for {path}")
-        if self.current_selected == path:
-            self.__select_image_from_gallery(path, True)
+        self.__select_image_from_gallery(path, True)
+
+        to_delete = []
+        for key in self.analysis_cache.keys():
+            if key != path:
+                to_delete.append(key)
+
+        for key in to_delete:
+            if key in self.analysis_cache:
+                self.analysis_cache[key].analysis_figure.close()
+                del self.analysis_cache[key]
+        gc.collect()
 
     def __create_fig(self, original: np.ndarray, region_properties: list, colony_labels: np.ndarray) -> AnalysisFigure:
         """
@@ -453,50 +512,46 @@ class PyCOLONYView:
 
             analysis_figure = self.__create_fig(aux["original"], aux["region_properties"], aux["colony_labels"])
 
-            self.analysis_cache[path] = AnalysisData(False, props, analysis_figure)
+            self.analysis_cache[path] = AnalysisData(props, analysis_figure)
 
             self.app.emit(FINISHED_ANALYSIS, path=path)
 
         self.app.task_frontend(process_plot)
 
-    def __save_analyzed(self, path: Path, only_finished: bool = False) -> None:
+    def __save_analyzed(self, path: Path, store_dir: Path) -> None:
         properties_list = []
         save_opts = {
             "bbox_inches": "tight",
             "transparent": True
         }
 
-        for img_path, data in self.analysis_cache.items():
-            if only_finished and not data.marked_finished:
-                continue
-            
-            save_path = path / img_path.stem
-            save_path.mkdir()
+        img_path = path
+        data = self.analysis_cache[img_path]
 
-            # Filter out only regions that were enabled
-            properties = data.region_properties
-            filtered_df = properties[properties["label"]
-                                     .map(lambda label: data.analysis_figure.figure_regions[label].is_enabled) # type: ignore
-                                     ]
-            properties_list.append(filtered_df)
+        # Filter out only regions that were enabled
+        properties = data.region_properties
+        filtered_df = properties[properties["label"]
+                                    .map(lambda label: data.analysis_figure.figure_regions[label].is_enabled) # type: ignore
+                                    ]
+        properties_list.append(filtered_df)
 
-            data.analysis_figure.set_all_regions_visible(False)
-            data.analysis_figure.set_background(original=False)
-            data.analysis_figure.figure.savefig(save_path / f"regions.png", **save_opts)
+        data.analysis_figure.set_all_regions_visible(False)
+        data.analysis_figure.set_background(original=False)
+        data.analysis_figure.figure.savefig(store_dir / f"regions.png", **save_opts)
 
-            data.analysis_figure.set_all_enabled_regions_visible(True)
-            data.analysis_figure.figure.savefig(save_path / f"enabledLabels.png", **save_opts)
-            data.analysis_figure.set_background(original=True)
-            data.analysis_figure.figure.savefig(save_path / f"enabledLabelsOriginal.png", **save_opts)     
+        data.analysis_figure.set_all_enabled_regions_visible(True)
+        data.analysis_figure.figure.savefig(store_dir / f"enabledLabels.png", **save_opts)
+        data.analysis_figure.set_background(original=True)
+        data.analysis_figure.figure.savefig(store_dir / f"enabledLabelsOriginal.png", **save_opts)     
 
-            data.analysis_figure.set_background(original=False)
-            data.analysis_figure.set_all_regions_visible(True)
-            data.analysis_figure.figure.savefig(save_path / f"allLabels.png", **save_opts)
-            data.analysis_figure.set_background(original=True)
-            data.analysis_figure.figure.savefig(save_path / f"allLabelsOriginal.png", **save_opts)
+        data.analysis_figure.set_background(original=False)
+        data.analysis_figure.set_all_regions_visible(True)
+        data.analysis_figure.figure.savefig(store_dir / f"allLabels.png", **save_opts)
+        data.analysis_figure.set_background(original=True)
+        data.analysis_figure.figure.savefig(store_dir / f"allLabelsOriginal.png", **save_opts)
 
-        write_properties_to_file(properties_list, path/"results.tsv")
-        self.app.log(INFO, f"pyCOLONY results have been saved to {path}")
+        write_properties_to_file(properties_list, store_dir/"analysis.tsv")
+        self.app.log(INFO, f"pyCOLONY results have been saved to {store_dir}")
 
         # reset UI state
         def reset_ui():

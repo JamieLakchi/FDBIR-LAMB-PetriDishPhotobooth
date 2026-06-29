@@ -95,7 +95,7 @@ class ImagerAppUI:
         self.app.log(INFO, f"CDW has changed to {path}")
         self.app.state.CWD = path
         self.current_dir_label.config(text=str(path))
-        self.__setup_save_buttons()
+        #self.__setup_save_buttons()
         self.app.emit(CHANGED_CWD, path=path)
 
     def __setup_save_buttons(self) -> None:
